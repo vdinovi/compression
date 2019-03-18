@@ -6,7 +6,7 @@ import (
 )
 
 func TestCompression(t *testing.T) {
-    uncompressed := []byte("0123456789")
+    uncompressed := []byte("0123456789024680")
     compressed := encode(uncompressed)
     decoded := decode(compressed)
 
