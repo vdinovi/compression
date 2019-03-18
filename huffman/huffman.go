@@ -11,6 +11,8 @@ type Symbol struct {
     glyph byte
     count uint32
     index int // for heap
+    encoding byte
+    numBits uint8
 }
 type SymbolPQ []*Symbol
 func (pq SymbolPQ) Len() int { return len(pq) }
@@ -54,16 +56,17 @@ func (pq *SymbolPQ) String() string {
 
 type Node struct {
     symbol *Symbol
+    parent *Node
     left *Node
     right *Node
 }
 func (node *Node) addLeft(symbol *Symbol) *Node {
-    (*node).left = &Node { symbol: symbol, left: nil, right: nil }
-    return (*node).left
+    node.left = &Node { symbol: symbol, parent: node, left: nil, right: nil, }
+    return node.left
 }
 func (node *Node) addRight(symbol *Symbol) *Node {
-    (*node).right = &Node { symbol: symbol, left: nil, right: nil }
-    return (*node).right
+    (*node).left = &Node { symbol: symbol, parent: node, left: nil, right: nil, }
+    return node.right
 }
 func (node *Node) subtreeString(accum *[]string, indent int) *[]string {
     sym := node.symbol
@@ -82,7 +85,15 @@ func (node *Node) String() string {
     return strings.Join(accum, "\n")
 }
 
-func mapString(dict *map[byte]uint32) string {
+func byteMapString(dict *map[byte]uint32) string {
+    jsonDict, err := json.MarshalIndent(*dict, "", "  ")
+    if err != nil {
+        fmt.Println("error:", err)
+    }
+    return string(jsonDict)
+}
+
+func encodingString(dict *map[byte]*Symbol) string {
     jsonDict, err := json.MarshalIndent(*dict, "", "  ")
     if err != nil {
         fmt.Println("error:", err)
@@ -106,11 +117,7 @@ func makeSymbolPQ(byteMap *map[byte]uint32) *SymbolPQ {
     pq := make(SymbolPQ, len(*byteMap))
     index := 0
     for glyph, count := range(*byteMap) {
-        pq[index] = &Symbol{
-            glyph: glyph,
-            count: count,
-            index: index,
-        }
+        pq[index] = &Symbol{ glyph: glyph, count: count, index: index, encoding: 0, numBits: 0 }
         index++
     }
     heap.Init(&pq)
@@ -137,13 +144,48 @@ func makeSymbolTree(pq *SymbolPQ) *Node {
     return root
 }
 
+func makeEncoding(root *Node) *map[byte]*Symbol {
+    queue := make([]*Node, 1) // makeshift queue
+    root.symbol.encoding = 0
+    root.symbol.numBits = 0
+    queue[0] = root
+    encoding := make(map[byte]*Symbol)
+
+    for len(queue) > 0 {
+        node := queue[0]
+        queue = queue[1:]
+
+        if node.left != nil {
+            node.symbol.encoding = node.parent.symbol.encoding
+            node.symbol.numBits = node.parent.symbol.numBits + 1
+            encoding[node.symbol.glyph] = node.symbol
+            queue = append(queue, node.left)
+        }
+        if node.right != nil {
+            node.symbol.encoding = node.parent.symbol.encoding | (0x01 << node.parent.symbol.numBits)
+            node.symbol.numBits = node.parent.symbol.numBits + 1
+            encoding[node.symbol.glyph] = node.symbol
+            queue = append(queue, node.right)
+        }
+    }
+    return &encoding
+}
+
+
+
 func encode(data []byte) []byte {
     byteMap := makeByteMap(data)
-    fmt.Println(mapString(byteMap))
+    //fmt.Println(byteMapString(byteMap))
+
     symbolPQ := makeSymbolPQ(byteMap)
-    fmt.Println(symbolPQ.String())
+    //fmt.Println(symbolPQ.String())
+
     symbolTree := makeSymbolTree(symbolPQ)
-    fmt.Printf("%+v\n", symbolTree)
+    //fmt.Printf("%+v\n", symbolTree)
+
+    encoding := makeEncoding(symbolTree)
+    fmt.Println(encodingString(encoding))
+
     return data
 }
 
